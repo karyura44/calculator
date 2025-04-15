@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 {
 	"name": "Калькулятор забора",
 	"short_name": "Калькулятор",
@@ -20,26 +19,3 @@
 		}
 	]
 }
-=======
-{
-	"name": "Калькулятор забора",
-	"short_name": "Калькулятор",
-	"description": "Калькулятор стоимости забора",
-	"start_url": "./",
-	"display": "standalone",
-	"background_color": "#f0fff0",
-	"theme_color": "#2e8b57",
-	"icons": [
-		{
-			"src": "./images/icon-192.png",
-			"sizes": "192x192",
-			"type": "image/png"
-		},
-		{
-			"src": "./images/icon-512.png",
-			"sizes": "512x512",
-			"type": "image/png"
-		}
-	]
-}
->>>>>>> 2dfb4bed4ca786c32bad6d619f96e99e49f3a70e

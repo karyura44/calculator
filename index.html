@@ -377,8 +377,13 @@
 				<!-- Выбор материала -->
 				<div class="calc__row">
 					<div class="calc__rowItem">
+						<label>Длина забора (м):</label>
+						<input type="number" id="fence_length" min="0" value="0" />
+					</div>
+
+					<div class="calc__rowItem">
 						<label>Тип материала:</label>
-						<select id="material_type" multiple>
+						<select id="material_type">
 							<option value="prof0">Профлист С-8 оцинк. 0.4мм</option>
 							<option value="prof1">Профлист одност. 0.4мм</option>
 							<option value="prof2">Профлист одност. 0.45мм</option>
@@ -392,19 +397,6 @@
 							<option value="euro3">Евроштакетник двухст. 0.45мм</option>
 							<option value="rabica">Сетка Рабица</option>
 							<option value="3d">3D панель</option>
-						</select>
-					</div>
-
-					<div class="calc__rowItem" id="gap_container" style="display: none">
-						<label>Зазор между штакетинами (см):</label>
-						<input type="number" id="gap" value="5" min="0" />
-					</div>
-
-					<div class="calc__rowItem" id="rabica_options" style="display: none">
-						<label>Протяжки (ряды):</label>
-						<select id="rabica_rows">
-							<option value="1">1 ряд</option>
-							<option value="2">2 ряда</option>
 						</select>
 					</div>
 				</div>
