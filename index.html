@@ -359,6 +359,95 @@
 	</head>
 	<body>
 		<div class="t-calc-container">
+			<meta charset="UTF-8" />
+			<meta
+				name="viewport"
+				content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+			/>
+			<title>Калькулятор забора</title>
+			<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+			<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+			<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+			<script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+			<!-- Добавляем библиотеку для экспорта в Excel -->
+			<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+			<!-- Добавляем библиотеку для работы с docx -->
+			<script src="https://cdn.jsdelivr.net/npm/docx/build/index.min.js"></script>
+			<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+			<link
+				rel="stylesheet"
+				href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css"
+			/>
+			<!-- Добавляем иконки -->
+			<link
+				rel="stylesheet"
+				href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+			/>
+			<!-- Добавляем шрифт для поддержки кириллицы в PDF -->
+			<link
+				href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap"
+				rel="stylesheet"
+			/>
+			<link
+				href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=swap"
+				rel="stylesheet"
+			/>
+			<style>
+				:root {
+					--primary-green: #2e8b57;
+					--dark-green: #006400;
+					--light-green: #98fb98;
+					--background: #f0fff0;
+					--text-dark: #228b22;
+				}
+
+				.export-button {
+					display: flex;
+					align-items: center;
+					gap: 8px;
+					padding: 12px 24px;
+					border: none;
+					border-radius: 8px;
+					font-size: 1.1rem;
+					cursor: pointer;
+					transition: all 0.3s ease;
+					color: white;
+					box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+				}
+
+				.export-button:hover {
+					transform: translateY(-2px);
+					box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+				}
+
+				.export-button.pdf {
+					background-color: #ff4136;
+				}
+
+				.export-button i {
+					font-size: 1.2rem;
+				}
+
+				@media print {
+					body * {
+						visibility: hidden;
+					}
+					.statistic,
+					.statistic * {
+						visibility: visible;
+					}
+					.statistic {
+						position: absolute;
+						left: 0;
+						top: 0;
+						width: 100%;
+					}
+					.export-buttons {
+						display: none;
+					}
+				}
+			</style>
+
 			<div class="wrapper">
 				<h1>Калькулятор стоимости забора</h1>
 
@@ -377,13 +466,8 @@
 				<!-- Выбор материала -->
 				<div class="calc__row">
 					<div class="calc__rowItem">
-						<label>Длина забора (м):</label>
-						<input type="number" id="fence_length" min="0" value="0" />
-					</div>
-
-					<div class="calc__rowItem">
 						<label>Тип материала:</label>
-						<select id="material_type">
+						<select id="material_type" multiple>
 							<option value="prof0">Профлист С-8 оцинк. 0.4мм</option>
 							<option value="prof1">Профлист одност. 0.4мм</option>
 							<option value="prof2">Профлист одност. 0.45мм</option>
@@ -397,6 +481,19 @@
 							<option value="euro3">Евроштакетник двухст. 0.45мм</option>
 							<option value="rabica">Сетка Рабица</option>
 							<option value="3d">3D панель</option>
+						</select>
+					</div>
+
+					<div class="calc__rowItem" id="gap_container" style="display: none">
+						<label>Зазор между штакетинами (см):</label>
+						<input type="number" id="gap" value="5" min="0" />
+					</div>
+
+					<div class="calc__rowItem" id="rabica_options" style="display: none">
+						<label>Протяжки (ряды):</label>
+						<select id="rabica_rows">
+							<option value="1">1 ряд</option>
+							<option value="2">2 ряда</option>
 						</select>
 					</div>
 				</div>
@@ -689,6 +786,33 @@
 					screw: 70,
 				}
 
+				function formatPrice(price) {
+					return new Intl.NumberFormat('ru-RU', {
+						style: 'currency',
+						currency: 'RUB',
+					})
+						.format(price)
+						.replace(',00', '')
+				}
+
+				function updateElement(selector, count, price, label) {
+					if (count > 0) {
+						const element = $(selector)
+						const total = count * price
+						const row = `
+                         <tr>
+                             <td>${label}</td>
+                             <td>${count}</td>
+                             <td>${formatPrice(price)}</td>
+                             <td><strong>${formatPrice(total)}</strong></td>
+                         </tr>
+                     `
+						element.find('tbody').append(row)
+						return total
+					}
+					return 0
+				}
+
 				function calculatePaintingCost(
 					length,
 					height,
@@ -699,27 +823,953 @@
 					wicket,
 					paintingType
 				) {
-					let totalLength = 0;
+					let totalLength = 0
 
-					const postType = $('#post_type').val();
+					// Учитываем столбы (только если они металлические)
+					const postType = $('#post_type').val()
 					if (postType !== 'post3') {
-						totalLength += postCount * 3;
+						// post3 - это кирпичный столб
+						totalLength += postCount * 3 // Высота столба 3 м
 					}
 
-					const materialTypes = $('#material_type').val() || [];
-					let lagFenceLength = 0;
+					// Учитываем лаги для профлиста и штакетника
+					const materialTypes = $('#material_type').val() || []
+					let lagFenceLength = 0
 					materialTypes.forEach(materialType => {
-						if (materialType.startsWith('prof') || materialType.startsWith('euro')) {
-							lagFenceLength += parseFloat($('.material-length[data-material="' + materialType + '"]').val()) || 0;
+						if (
+							materialType.startsWith('prof') ||
+							materialType.startsWith('euro')
+						) {
+							lagFenceLength +=
+								parseFloat(
+									$(
+										'.material-length[data-material="' + materialType + '"]'
+									).val()
+								) || 0
 						}
-					});
-
+					})
 					if (lagFenceLength > 0) {
-						totalLength += lagFenceLength * 2;
+						totalLength += lagFenceLength * 2 // 2 ряда лаг
 					}
 
-					return { totalLength, paintingCost: totalLength * (paintingType === 1 ? prices.painting.primer : paintingType === 2 ? prices.painting.paint : paintingType === 3 ? prices.painting.primer + prices.painting.paint : 0) };
+					// Учитываем протяжки только для рабицы
+					if (materialTypes.includes('rabica')) {
+						const rabicaRows = parseInt($('#rabica_rows').val()) || 1
+						const rabicaLength =
+							parseFloat($('.material-length[data-material="rabica"]').val()) ||
+							0
+						totalLength += rabicaLength * rabicaRows
+					}
+
+					// Добавляем длину для ворот и калиток с новыми значениями
+					if (swingGate > 0) totalLength += swingGate * 50 // 50 метров на распашные ворота
+					if (slidingGate > 0) totalLength += slidingGate * 70 // 70 метров на откатные ворота
+					if (wicket > 0) totalLength += wicket * 25 // 25 метров на калитку
+
+					// Рассчитываем стоимость покраски
+					const paintingCost =
+						totalLength *
+						(paintingType === 1
+							? prices.painting.primer
+							: paintingType === 2
+							? prices.painting.paint
+							: paintingType === 3
+							? prices.painting.primer + prices.painting.paint
+							: 0)
+
+					return { totalLength, paintingCost }
 				}
+
+				function updateTableFooter(selector) {
+					const total = Array.from(
+						$(`${selector} tbody tr td:last-child strong`)
+					).reduce(
+						(sum, cell) =>
+							sum + parseFloat(cell.textContent.replace(/\D/g, '')),
+						0
+					)
+
+					$(`${selector} tfoot`).remove()
+					$(selector).append(`
+                    <tfoot>
+                        <tr>
+                            <td colspan="3">Итого</td>
+                            <td><strong>${formatPrice(total)}</strong></td>
+                        </tr>
+                    </tfoot>
+                `)
+				}
+
+				// Исправление отображения цены для профлиста
+				function calculateMaterialCost(
+					length,
+					height,
+					material,
+					gap,
+					rabicaRows
+				) {
+					let materialCost = 0
+					let materialQuantity = 0
+					let unit = ''
+
+					if (!material || !material.type) {
+						console.error('Invalid material data:', material)
+						return { materialCost, materialQuantity, unit }
+					}
+
+					const materialName = material.name || material.type // Используем имя материала, если оно есть
+
+					switch (material.type) {
+						case 'лист':
+							if (!material.width || !material.prices) {
+								console.error('Missing width or prices for material:', material)
+								break
+							}
+							const sheets = Math.ceil(length / material.width) // Количество листов
+							materialCost = sheets * (material.prices[height] || 0) // Общая стоимость
+							materialQuantity = sheets // Количество листов
+							unit = 'лист'
+							break
+						case 'штакетник':
+						case 'похожий_материал':
+							const picketWidth = 0.11
+							const totalPickets = Math.ceil(
+								(length * 100) / (picketWidth * 100 + gap)
+							)
+							materialCost = totalPickets * (material.prices[height] || 0)
+							materialQuantity = totalPickets
+							unit = 'шт.'
+							break
+						case 'рулон':
+							if (!material.price) {
+								console.error('Missing price for material:', material)
+								break
+							}
+							const rolls = Math.ceil(length / 10)
+							materialCost = rolls * (material.price[height] || 0)
+							materialQuantity = rolls
+							unit = 'рулон'
+							break
+						case 'секция':
+							if (!material.price) {
+								console.error('Missing price for material:', material)
+								break
+							}
+							const panelCount = Math.ceil(length / 2.5)
+							materialCost = panelCount * (material.price[height] || 0)
+							materialQuantity = panelCount
+							unit = 'секция'
+							break
+						default:
+							console.error('Unknown material type:', material.type)
+					}
+
+					return { materialCost, materialQuantity, unit, materialName }
+				}
+
+				function calculatePosts(materialLengths) {
+					let totalLength = Object.values(materialLengths).reduce(
+						(sum, len) => sum + len,
+						0
+					) // Суммируем длины всех материалов
+					const postSpacing = 2.5 // Расстояние между столбами в метрах
+					const postCount = Math.ceil(totalLength / postSpacing) // Количество столбов
+					$('#length').val(totalLength.toFixed(2)) // Устанавливаем значение длины забора
+					return postCount
+				}
+
+				// Исправление отображения цены для материалов и добавление столбов в таблицу
+				function calculate() {
+					const materialLengths = {}
+					$('.material-length').each(function () {
+						const material = $(this).data('material')
+						const length = parseFloat($(this).val()) || 0
+						materialLengths[material] = length
+					})
+
+					const height = parseFloat($('#fence_height').val()) // Используем выбранную высоту
+					const materialTypes = $('#material_type').val() || []
+					const postType = $('#post_type').val()
+					const paintingType = parseInt($('#painting_type').val()) || 0
+					const swingGateCount = parseInt($('#swing_gate').val()) || 0
+					const slidingGateCount = parseInt($('#sliding_gate').val()) || 0
+					const wicketCount = parseInt($('#wicket').val()) || 0
+					const deliveryType = parseFloat($('#delivery_type').val()) || 0
+					const deliveryCount = parseInt($('#delivery_count').val()) || 1
+					const automation = $('#automation').is(':checked')
+
+					// Очищаем таблицы перед заполнением
+					$('#stat-col-materials table tbody').empty()
+					$('#stat-col-works table tbody').empty()
+
+					let total = 0
+					let totalLength = 0
+
+					// Подсчёт материалов
+					materialTypes.forEach(materialType => {
+						const material = prices.materials[materialType]
+						if (material) {
+							const materialLength = materialLengths[materialType] || 0
+							totalLength += materialLength
+							const { materialCost, materialQuantity, unit } =
+								calculateMaterialCost(
+									materialLength,
+									height,
+									material,
+									parseFloat($('#gap').val()) || 0,
+									parseInt($('#rabica_rows').val()) || 1
+								)
+
+							if (materialCost > 0) {
+								total += materialCost
+								$('#stat-col-materials table tbody').append(`
+                                <tr>
+                                    <td>${material.name}</td>
+                                    <td>${materialQuantity} ${unit}</td>
+                                    <td>${formatPrice(
+																			material.prices?.[height] ||
+																				material.price?.[height] ||
+																				0
+																		)}</td>
+                                    <td><strong>${formatPrice(
+																			materialCost
+																		)}</strong></td>
+                                </tr>
+                            `)
+							}
+						}
+					})
+
+					// Проверяем, есть ли материалы забора (не только ворота/калитки)
+					const hasFenceMaterials = materialTypes.length > 0
+
+					// Подсчёт столбов только если есть материалы забора
+					if (hasFenceMaterials) {
+						const postCount = Math.ceil(totalLength / 2.5) // Расстояние между столбами 2.5 м
+						const post = prices.posts[postType]
+						if (post) {
+							const postCost = postCount * post.price
+							total += postCost
+							$('#stat-col-materials table tbody').append(`
+                            <tr>
+                                <td>${post.name}</td>
+                                <td>${postCount} шт</td>
+                                <td>${formatPrice(post.price)}</td>
+                                <td><strong>${formatPrice(
+																	postCost
+																)}</strong></td>
+                            </tr>
+                        `)
+						}
+					}
+
+					// Подсчет длины забора из штакетника и профлиста для лаг
+					let lagFenceLength = 0
+					materialTypes.forEach(materialType => {
+						// Учитываем длину только для штакетника и профлиста
+						if (
+							materialType.startsWith('prof') ||
+							materialType.startsWith('euro')
+						) {
+							lagFenceLength += materialLengths[materialType] || 0
+						}
+					})
+
+					// Добавляем лаги если есть штакетник или профлист
+					if (lagFenceLength > 0) {
+						const lagsRows = 2 // 2 ряда лаг
+						const lagCost = lagFenceLength * lagsRows * prices.lags
+						total += lagCost
+
+						$('#stat-col-materials table tbody').append(`
+                        <tr>
+                            <td>Лаги</td>
+                            <td>${lagFenceLength * lagsRows} м.п.</td>
+                            <td>${formatPrice(prices.lags)}</td>
+                            <td><strong>${formatPrice(lagCost)}</strong></td>
+                        </tr>
+                    `)
+					}
+
+					// Добавляем протяжки только для рабицы
+					if (materialTypes.includes('rabica')) {
+						const rabicaRows = parseInt($('#rabica_rows').val()) || 1
+						const rabicaLength = materialLengths['rabica'] || 0 // Берем только длину рабицы
+						const stretchingLength = rabicaLength * rabicaRows
+						const stretchingCost = stretchingLength * prices.stretching
+						total += stretchingCost
+
+						$('#stat-col-materials table tbody').append(`
+                        <tr>
+                            <td>Протяжка</td>
+                            <td>${stretchingLength} м.п.</td>
+                            <td>${formatPrice(prices.stretching)}</td>
+                            <td><strong>${formatPrice(
+															stretchingCost
+														)}</strong></td>
+                        </tr>
+                    `)
+					}
+
+					// Добавляем скобы-саморезы только для 3D панелей
+					if (materialTypes.includes('3d')) {
+						const panelLength = materialLengths['3d'] || 0
+						const sectionLength = 2.5 // длина секции
+						const sectionsCount = Math.ceil(panelLength / sectionLength)
+						const screwsPerSection = 3
+						const totalScrews = sectionsCount * screwsPerSection
+						const screwCost = totalScrews * prices.screw
+						total += screwCost
+
+						$('#stat-col-materials table tbody').append(`
+                        <tr>
+                            <td>Скоба-саморез</td>
+                            <td>${totalScrews} шт</td>
+                            <td>${formatPrice(prices.screw)}</td>
+                            <td><strong>${formatPrice(screwCost)}</strong></td>
+                        </tr>
+                    `)
+					}
+
+					// Добавляем ворота и калитки в материалы
+					if (swingGateCount > 0) {
+						const swingGateCost = swingGateCount * prices.gates.swing.material
+						total += swingGateCost
+						$('#stat-col-materials table tbody').append(`
+                        <tr>
+                            <td>Распашные ворота</td>
+                            <td>${swingGateCount} шт</td>
+                            <td>${formatPrice(prices.gates.swing.material)}</td>
+                            <td><strong>${formatPrice(
+															swingGateCost
+														)}</strong></td>
+                        </tr>
+                    `)
+					}
+
+					if (slidingGateCount > 0) {
+						const slidingGateCost =
+							slidingGateCount * prices.gates.sliding.material
+						total += slidingGateCost
+						$('#stat-col-materials table tbody').append(`
+                        <tr>
+                            <td>Откатные ворота</td>
+                            <td>${slidingGateCount} шт</td>
+                            <td>${formatPrice(
+															prices.gates.sliding.material
+														)}</td>
+                            <td><strong>${formatPrice(
+															slidingGateCost
+														)}</strong></td>
+                        </tr>
+                    `)
+					}
+
+					if (wicketCount > 0) {
+						const wicketCost = wicketCount * prices.gates.wicket.material
+						total += wicketCost
+						$('#stat-col-materials table tbody').append(`
+                        <tr>
+                            <td>Калитки</td>
+                            <td>${wicketCount} шт</td>
+                            <td>${formatPrice(
+															prices.gates.wicket.material
+														)}</td>
+                            <td><strong>${formatPrice(wicketCost)}</strong></td>
+                        </tr>
+                    `)
+					}
+
+					// Добавляем автоматику если выбрана
+					if (automation) {
+						const automationCost = prices.automation.material
+						total += automationCost
+						$('#stat-col-materials table tbody').append(`
+                        <tr>
+                            <td>Автоматика</td>
+                            <td>1 комп.</td>
+                            <td>${formatPrice(automationCost)}</td>
+                            <td><strong>${formatPrice(
+															automationCost
+														)}</strong></td>
+                        </tr>
+                    `)
+					}
+
+					// Подсчет длины для покраски
+					const postCount = Math.ceil(totalLength / 2.5)
+
+					// Добавляем стоимость покраски если выбрана (в материалы)
+					if (paintingType > 0) {
+						const { totalLength: paintingLength, paintingCost } =
+							calculatePaintingCost(
+								totalLength,
+								height,
+								postCount,
+								postCount * 3,
+								swingGateCount,
+								slidingGateCount,
+								wicketCount,
+								paintingType
+							)
+
+						if (paintingCost > 0) {
+							const paintingPrice =
+								paintingType === 1
+									? prices.painting.primer
+									: paintingType === 2
+									? prices.painting.paint
+									: paintingType === 3
+									? prices.painting.primer + prices.painting.paint
+									: 0
+
+							const paintingName =
+								paintingType === 1
+									? 'Грунт ГФ-021'
+									: paintingType === 2
+									? 'Краска Dalli'
+									: 'Грунт + краска'
+
+							$('#stat-col-materials table tbody').append(`
+                            <tr>
+                                <td>${paintingName}</td>
+                                <td>${paintingLength} м.п.</td>
+                                <td>${formatPrice(paintingPrice)}</td>
+                                <td><strong>${formatPrice(
+																	paintingCost
+																)}</strong></td>
+                            </tr>
+                        `)
+							total += paintingCost
+						}
+					}
+
+					// Подсчёт работ по монтажу материалов
+					materialTypes.forEach(materialType => {
+						const material = prices.materials[materialType]
+						if (material) {
+							const materialLength = materialLengths[materialType] || 0
+							const workCost = materialLength * (material.work || 0)
+
+							if (workCost > 0) {
+								$('#stat-col-works table tbody').append(`
+                                <tr>
+                                    <td>Монтаж: ${material.name}</td>
+                                    <td>${materialLength} м</td>
+                                    <td>${formatPrice(material.work)}</td>
+                                    <td><strong>${formatPrice(
+																			workCost
+																		)}</strong></td>
+                                </tr>
+                                `)
+								total += workCost
+							}
+						}
+					})
+
+					// Добавляем работы по монтажу ворот, калиток и автоматики
+					if (swingGateCount > 0) {
+						const swingGateWorkCost = swingGateCount * prices.gates.swing.work
+						total += swingGateWorkCost
+						$('#stat-col-works table tbody').append(`
+                        <tr>
+                            <td>Монтаж распашных ворот</td>
+                            <td>${swingGateCount} шт</td>
+                            <td>${formatPrice(prices.gates.swing.work)}</td>
+                            <td><strong>${formatPrice(
+															swingGateWorkCost
+														)}</strong></td>
+                        </tr>
+                        `)
+					}
+
+					if (slidingGateCount > 0) {
+						const slidingGateWorkCost =
+							slidingGateCount * prices.gates.sliding.work
+						total += slidingGateWorkCost
+						$('#stat-col-works table tbody').append(`
+                        <tr>
+                            <td>Монтаж откатных ворот</td>
+                            <td>${slidingGateCount} шт</td>
+                            <td>${formatPrice(prices.gates.sliding.work)}</td>
+                            <td><strong>${formatPrice(
+															slidingGateWorkCost
+														)}</strong></td>
+                        </tr>
+                        `)
+					}
+
+					if (wicketCount > 0) {
+						const wicketWorkCost = wicketCount * prices.gates.wicket.work
+						total += wicketWorkCost
+						$('#stat-col-works table tbody').append(`
+                        <tr>
+                            <td>Монтаж калиток</td>
+                            <td>${wicketCount} шт</td>
+                            <td>${formatPrice(prices.gates.wicket.work)}</td>
+                            <td><strong>${formatPrice(
+															wicketWorkCost
+														)}</strong></td>
+                        </tr>
+                        `)
+					}
+
+					if (automation) {
+						const automationWorkCost = prices.automation.work
+						total += automationWorkCost
+						$('#stat-col-works table tbody').append(`
+                        <tr>
+                            <td>Монтаж автоматики</td>
+                            <td>1 комп.</td>
+                            <td>${formatPrice(automationWorkCost)}</td>
+                            <td><strong>${formatPrice(
+															automationWorkCost
+														)}</strong></td>
+                        </tr>
+                        `)
+					}
+
+					// Добавляем доставку в работы
+					if (deliveryType > 0 && deliveryCount > 0) {
+						const deliveryCost = deliveryType * deliveryCount
+						total += deliveryCost
+						$('#stat-col-works table tbody').append(`
+                        <tr>
+                            <td>Доставка</td>
+                            <td>${deliveryCount} ${
+							deliveryCount === 1 ? 'рейс' : 'рейса'
+						}</td>
+                            <td>${formatPrice(deliveryType)}</td>
+                            <td><strong>${formatPrice(
+															deliveryCost
+														)}</strong></td>
+                        </tr>
+                        `)
+					}
+
+					// Обновление итогов для таблиц материалов и работ
+					updateTableFooter('#stat-col-materials table')
+					updateTableFooter('#stat-col-works table')
+
+					// Итоговая сумма
+					$('#stat_total').html(`<strong>Итого: ${formatPrice(total)}</strong>`)
+				}
+
+				function handleMaterialTypeChange() {
+					const selectedMaterials = $('#material_type').val() || []
+
+					// Удаляем все существующие поля длины
+					$('.material-length-container').remove()
+
+					// Добавляем поля длины для каждого выбранного материала
+					selectedMaterials.forEach(material => {
+						const materialData = prices.materials[material]
+						if (materialData) {
+							const lengthField = `
+                            <div class="calc__rowItem material-length-container">
+                                <label>Длина для ${materialData.name} (м):</label>
+                                <input type="number" 
+                                    class="material-length form-control" 
+                                    data-material="${material}" 
+                                    value="10" 
+                                    min="1" 
+                                    step="0.1" 
+                                />
+                            </div>`
+							$('#length-inputs-container').append(lengthField)
+						}
+					})
+
+					// Показываем/скрываем дополнительные опции
+					$('#rabica_options').toggle(selectedMaterials.includes('rabica'))
+					$('#gap_container').toggle(
+						selectedMaterials.some(val => val.startsWith('euro'))
+					)
+
+					calculate()
+				}
+
+				// Удаляем все дублирующие обработчики, оставляем только основные
+				$(document).ready(function () {
+					// Инициализация Choices.js
+					const materialSelect = document.getElementById('material_type')
+					const choices = new Choices(materialSelect, {
+						removeItemButton: true,
+						searchEnabled: false,
+						placeholderValue: 'Выберите материалы',
+						noResultsText: 'Нет совпадений',
+						noChoicesText: 'Нет доступных вариантов',
+						shouldSort: false,
+					})
+
+					// Основные обработчики событий
+					$('#material_type').on('change', handleMaterialTypeChange)
+					$(document).on(
+						'input change',
+						'input, select, .material-length',
+						calculate
+					)
+
+					// Начальная инициализация
+					handleMaterialTypeChange()
+				})
+
+				// Функции экспорта
+				function getTableData(tableId) {
+					const table = document.getElementById(tableId)
+					const headers = []
+					const data = []
+
+					// Получаем заголовки
+					const headerCells = table.querySelectorAll('thead th')
+					headerCells.forEach(cell => {
+						headers.push(cell.textContent.trim())
+					})
+
+					// Получаем данные
+					const rows = table.querySelectorAll('tbody tr')
+					rows.forEach(row => {
+						const rowData = []
+						const cells = row.querySelectorAll('td')
+						cells.forEach(cell => {
+							rowData.push(cell.textContent.trim())
+						})
+						if (rowData.length > 0) {
+							data.push(rowData)
+						}
+					})
+
+					return {
+						headers: headers,
+						data: data,
+					}
+				}
+
+				function getCurrentDate() {
+					const date = new Date()
+					return date.toLocaleDateString('ru-RU')
+				}
+
+				function exportToPDF() {
+					const pdfContent = document.createElement('div')
+					pdfContent.style.padding = '20px'
+
+					// Создаем единую шапку для документа
+					const header = document.createElement('div')
+					header.innerHTML = `
+							<table style="width: 100%; margin-bottom: 15px; border-collapse: collapse;">
+								<tr>
+									<td style="width: 60%; padding-right: 20px;">
+										<div style="font-size: 12px; color: #444; line-height: 1.5;">
+											<div>сайт: <strong>www.zaborandrian.ru</strong></div>
+											<div>e-mail: <strong>info@zaborandrian.ru</strong></div>
+											<div>тел: <strong>8-968-888-39-55</strong></div>
+										</div>
+									</td>
+									<td style="width: 40%; text-align: right;">
+										<div style="font-size: 12px; color: #444;">
+											<div style="margin-bottom: 5px;"><strong>Приложение №1</strong></div>
+											<div><strong>Цех калуга</strong></div>
+										</div>
+									</td>
+								</tr>
+							</table>
+
+							<div style="text-align: center; margin: 15px 0; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+								<h2 style="margin: 0 0 10px 0; font-size: 16px; text-transform: uppercase;">Заказ-наряд</h2>
+								<div style="font-size: 12px;">к договору №________ от ________</div>
+							</div>
+
+							<table style="width: 100%; margin-bottom: 15px;">
+								<tr>
+									<td style="width: 60%;">
+										<div style="font-size: 12px; line-height: 1.8;">
+											<div><strong>Подрядчик:</strong> ИП Дорофтей Андриан</div>
+											<div><strong>Выезд замерщика:</strong> Андриан</div>
+											<div style="margin-top: 15px;">
+												<div style="display: flex; align-items: center; margin-bottom: 12px;">
+													<div style="width: 100px;"><strong>Заказчик:</strong></div>
+													<div style="flex-grow: 1; height: 1px; background: #2e8b57; opacity: 0.3;"></div>
+												</div>
+												<div style="display: flex; align-items: center; margin-bottom: 12px;">
+													<div style="width: 100px;"><strong>E-mail:</strong></div>
+													<div style="flex-grow: 1; height: 1px; background: #2e8b57; opacity: 0.3;"></div>
+												</div>
+												<div style="display: flex; align-items: center; margin-bottom: 12px;">
+													<div style="width: 100px;"><strong>Тел.:</strong></div>
+													<div style="flex-grow: 1; height: 1px; background: #2e8b57; opacity: 0.3;"></div>
+												</div>
+												<div style="display: flex; align-items: center; margin-bottom: 12px;">
+													<div style="width: 100px;"><strong>Адрес:</strong></div>
+													<div style="flex-grow: 1; height: 1px; background: #2e8b57; opacity: 0.3;"></div>
+												</div>
+											</div>
+										</div>
+									</td>
+									<td style="width: 40%; text-align: right; vertical-align: top;">
+										<div style="font-size: 12px; line-height: 1.6;">
+												<div style="margin-bottom: 8px;"><strong>Дата установки:</strong></div>
+												<div style="display: flex; align-items: center; margin-bottom: 8px;">
+													<div style="margin-right: 8px;">с</div>
+													<div style="flex-grow: 1; height: 1px; background: #2e8b57; opacity: 0.3;"></div>
+												</div>
+												<div style="display: flex; align-items: center;">
+													<div style="margin-right: 8px;">по</div>
+													<div style="flex-grow: 1; height: 1px; background: #2e8b57; opacity: 0.3;"></div>
+												</div>
+										</div>
+									</td>
+								</tr>
+							</table>
+
+							<div style="text-align: center; margin: 15px 0; padding: 8px; background: #f5f5f5; border-radius: 4px;">
+								<strong style="font-size: 12px; color: #2e8b57;">Звонок бригады накануне с 20:00 до 23:00</strong>
+							</div>
+						`
+
+					const tableStyles = `
+						<style>
+							table {
+								box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+								background: white;
+								font-family: 'PT Sans', sans-serif;
+							}
+							
+							th, td {
+								border: 1px solid #ddd;
+								padding: 12px;
+								font-size: 12px;
+							}
+
+							th {
+								background: #2e8b57 !important;
+								color: white;
+								font-weight: bold;
+								text-transform: uppercase;
+								font-size: 11px;
+								letter-spacing: 0.5px;
+							}
+
+							tbody tr:nth-child(odd) {
+								background: #f9f9f9;
+							}
+
+							tbody tr:hover {
+								background: #f3f8f3;
+							}
+
+							td {
+								border-bottom: 1px solid #eee;
+							}
+
+							td:last-child {
+								font-weight: bold;
+								color: #2e8b57;
+							}
+
+							tfoot tr {
+								background: #f5f5f5;
+								font-weight: bold;
+							}
+
+							tfoot td {
+								color: #2e8b57;
+								font-size: 13px;
+							}
+						</style>
+					`
+
+					const tableTemplate = (title, content, footer) => `
+						<h3 style="margin: 15px 0; font-size: 14px; color: #2e8b57; text-transform: uppercase; letter-spacing: 0.5px;">${title}</h3>
+						<table style="width: 100%; border-collapse: collapse; margin: 15px 0; border-radius: 4px; overflow: hidden;">
+							<thead>
+								<tr>
+									<th style="background: #2e8b57; color: white; padding: 12px;">Наименование</th>
+									<th style="background: #2e8b57; color: white; padding: 12px; width: 20%;">Кол-во</th>
+									<th style="background: #2e8b57; color: white; padding: 12px; width: 20%;">Цена</th>
+									<th style="background: #2e8b57; color: white; padding: 12px; width: 20%;">Сумма</th>
+								</tr>
+							</thead>
+							<tbody style="background: white;">
+								${content}
+							</tbody>
+							<tfoot>
+								<tr>
+									<td colspan="3" style="text-align: right; padding: 12px; background: #f5f5f5;">
+										<strong style="color: #2e8b57;">Итого по ${title.toLowerCase()}:</strong>
+									</td>
+									<td style="padding: 12px; background: #f5f5f5;">
+										<strong style="color: #2e8b57;">${footer}</strong>
+									</td>
+								</tr>
+							</tfoot>
+						</table>
+					`
+
+					// Создаем первую страницу с материалами
+					const materialsSection = document.createElement('div')
+					materialsSection.style.pageBreakAfter = 'always'
+					materialsSection.innerHTML =
+						tableStyles +
+						tableTemplate(
+							'Материалы',
+							document.querySelector('#stat-col-materials table tbody')
+								.innerHTML,
+							document.querySelector(
+								'#stat-col-materials table tfoot td:last-child'
+							).innerHTML
+						)
+
+					// Создаем вторую страницу с работами
+					const worksSection = document.createElement('div')
+					worksSection.innerHTML =
+						tableTemplate(
+							'Работы',
+							document.querySelector('#stat-col-works table tbody').innerHTML,
+							document.querySelector(
+								'#stat-col-works table tfoot td:last-child'
+							).innerHTML
+						) +
+						`
+        <div style="margin: 30px 0 40px; padding: 20px; background: #f5f5f5; border-radius: 8px; text-align: right;">
+            <div style="font-size: 18px; font-weight: bold; color: #2e8b57;">
+                ${document.querySelector('#stat_total').innerHTML}
+            </div>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; margin: 40px 0 20px; padding: 30px 0; border-top: 1px solid #eee;">
+            <div style="flex: 1; margin-right: 20px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                    <div style="font-size: 13px; color: #2e8b57;">Заказчик:</div>
+                    <div style="flex-grow: 1; height: 1px; background: #2e8b57; opacity: 0.3;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 9px; color: #666; padding: 0 20px;">
+                    <span>подпись</span>
+                    <span>расшифровка</span>
+                </div>
+            </div>
+            
+            <div style="flex: 1; margin-left: 20px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                    <div style="font-size: 13px; color: #2e8b57;">Исполнитель:</div>
+                    <div style="flex-grow: 1; height: 1px; background: #2e8b57; opacity: 0.3;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 9px; color: #666; padding: 0 20px;">
+                    <span>подпись</span>
+                    <span>расшифровка</span>
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align: right; margin-top: 30px; font-size: 11px; color: #2e8b57;">
+            Дата составления: ${new Date().toLocaleDateString('ru-RU')}
+        </div>
+    `
+
+					// Собираем документ в правильном порядке без дублирования
+					pdfContent.appendChild(header)
+					pdfContent.appendChild(materialsSection)
+					pdfContent.appendChild(worksSection)
+
+					// Остальные настройки PDF
+					const opt = {
+						margin: [15, 15, 15, 15],
+						filename: 'Расчет_забора.pdf',
+						image: { type: 'jpeg', quality: 1 },
+						html2canvas: { scale: 2, letterRendering: true, useCORS: true },
+						jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+					}
+
+					html2pdf().from(pdfContent).set(opt).save()
+				}
+
+				function resetAndContinue() {
+					$('#stat-col-materials table tbody').empty()
+					$('#stat-col-works table tbody').empty()
+
+					$('#stat-col-materials table tfoot').remove()
+					$('#stat-col-works table tfoot').remove()
+					$('#stat_total strong').text('')
+
+					$('#material_type').val([]).trigger('change')
+					$('#gap').val(5)
+					$('#rabica_rows').val(1)
+					$('#post_type').val('post1')
+					$('#painting_type').val(0)
+					$('#swing_gate').val(0)
+					$('#sliding_gate').val(0)
+					$('#wicket').val(0)
+					$('#delivery_type').val(3500)
+					$('#delivery_count').val(1)
+					$('#automation').prop('checked', false)
+
+					window.scrollTo({ top: 0, behavior: 'smooth' })
+
+					setTimeout(() => {
+						$('#material_type').focus()
+					}, 500)
+				}
+
+				const printStyles = `
+					@media print {
+						@page {
+							size: A4;
+							margin: 20mm;
+						}
+						
+						body {
+							font-family: 'PT Sans', sans-serif;
+						}
+						
+						.statistic__table {
+							width: 100%;
+							border-collapse: collapse;
+							margin-bottom: 20px;
+						}
+						
+						.statistic__table th,
+						.statistic__table td {
+							padding: 8px;
+							border: 1px solid #000;
+						}
+						
+						.statistic__table th {
+							background-color: #2e8b57 !important;
+							color: white !important;
+							-webkit-print-color-adjust: exact;
+						}
+						
+						#stat_total {
+							font-size: 16px;
+							margin-top: 20px;
+							font-weight: bold;
+						}
+					}
+				`
+
+				const styleSheet = document.createElement('style')
+				styleSheet.type = 'text/css'
+				styleSheet.innerText = printStyles
+				document.head.appendChild(styleSheet)
+			</script>
+
+			<style>
+				body {
+					font-family: 'PT Sans', sans-serif;
+				}
+			</style>
+			<script>
+				window.addEventListener('load', function () {
+					if (typeof window.jspdf === 'undefined') {
+						console.error('jsPDF library not loaded')
+						const errorMsg = document.createElement('div')
+						errorMsg.style.color = 'red'
+						errorMsg.style.padding = '10px'
+						errorMsg.textContent =
+							'Ошибка загрузки библиотеки PDF. Пожалуйста, обновите страницу.'
+						document.body.insertBefore(errorMsg, document.body.firstChild)
+					}
+				})
 			</script>
 		</div>
 	</body>
